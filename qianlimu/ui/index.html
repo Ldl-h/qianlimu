@@ -1,0 +1,2191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>千里目 - 智能地理教学系统</title>
+    <!-- 使用 jsdelivr 提供的绝对最新版本，确保支持所有最新的 Google 资产类型 -->
+    <script src="https://cdn.jsdelivr.net/npm/cesium@latest/Build/Cesium/Cesium.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/cesium@latest/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <link rel="stylesheet" href="/styles/themes.css">
+    <style>
+        :root {
+            /* 核心变量 - 默认暗色模式 */
+            --primary: #00d2ff;
+            --primary-bg: rgba(15, 23, 42, 0.7);      /* 主背景色 (带透明度以支持磨砂) */
+            --secondary-bg: rgba(30, 41, 59, 0.5);    /* 次要背景色 */
+            --primary-text: #f8fafc;                  /* 主文字颜色 */
+            --highlight-text: #00d2ff;                /* 高亮文字颜色 */
+            --border-color: rgba(255, 255, 255, 0.1); /* 边框颜色 */
+            --glass-bg: rgba(255, 255, 255, 0.12);
+            --glass-border: rgba(255, 255, 255, 0.15);
+            --input-bg: rgba(255, 255, 255, 0.1);
+        }
+
+        /* Vchat 主题适配 - 亮色模式 */
+        body.light-theme {
+            --primary-bg: rgba(241, 245, 249, 0.8);   /* 亮色背景，增加不透明度确保清晰 */
+            --secondary-bg: rgba(226, 232, 240, 0.6);
+            --primary-text: #0f172a;                  /* 深色文字 */
+            --highlight-text: #0097a7;                /* 亮色模式下的高亮色 */
+            --border-color: rgba(0, 0, 0, 0.1);
+            --glass-bg: rgba(255, 255, 255, 0.6);     /* 亮色模式下增加白底感 */
+            --glass-border: rgba(0, 0, 0, 0.08);
+            --input-bg: rgba(0, 0, 0, 0.05);
+        }
+
+        body {
+            margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; overflow: hidden; display: flex;
+            background: transparent !important; color: var(--primary-text); transition: all 0.3s ease-in-out;
+            /* 强制应用壁纸变量，并确保路径正确 */
+            background-image: var(--chat-wallpaper-dark) !important;
+            background-size: cover !important;
+            background-position: center !important;
+            background-attachment: fixed !important;
+        }
+        body.light-theme {
+            background-image: var(--chat-wallpaper-light) !important;
+        }
+
+        #cesiumContainer { flex-grow: 1; height: 100%; background: transparent; }
+        
+        #controlPanel {
+            width: 400px; /* 初始宽度 */
+            min-width: 250px;
+            max-width: 600px;
+            height: 100%;
+            background: transparent !important; /* 背景完全透明 */
+            position: relative;
+            padding: 20px;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            box-shadow: none; /* 移除侧边栏阴影，让背景完整露出 */
+            z-index: 100;
+            border-left: none; /* 移除侧边栏左边框 */
+            overflow-y: auto;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+
+        #controlPanel::-webkit-scrollbar { width: 6px; }
+        #controlPanel::-webkit-scrollbar-track { background: transparent; }
+        #controlPanel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        #controlPanel::-webkit-scrollbar-thumb:hover { background: var(--primary); }
+        
+        .section {
+            margin-bottom: 25px;
+            background: var(--glass-bg);
+            backdrop-filter: blur(15px) saturate(150%); /* 磨砂效果集中在方框 */
+            -webkit-backdrop-filter: blur(15px) saturate(150%);
+            padding: 20px;
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+            flex-shrink: 0;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+            transition: all 0.3s ease-in-out;
+        }
+        h3 { margin: 0 0 15px 0; color: var(--highlight-text); font-size: 16px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        h3::before { content: ''; width: 4px; height: 16px; background: var(--highlight-text); border-radius: 2px; }
+        
+        label { display: block; margin-bottom: 5px; font-size: 12px; color: var(--primary-text); opacity: 0.8; font-weight: 600; }
+        input, button, select, textarea {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            border-radius: 8px;
+            border: 1px solid var(--glass-border);
+            background: var(--input-bg);
+            color: var(--primary-text);
+            box-sizing: border-box;
+            font-size: 13px;
+            font-family: inherit;
+            transition: all 0.2s;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+        }
+        input:focus, textarea:focus, select:focus { border-color: var(--highlight-text); outline: none; background: var(--glass-bg); }
+
+        /* 占位符颜色自适应 */
+        input::placeholder, textarea::placeholder {
+            color: var(--primary-text) !important;
+            opacity: 0.5;
+        }
+        
+        /* 修复下拉框选项背景与文字颜色 */
+        select option {
+            background: var(--primary-bg);
+            color: var(--primary-text);
+        }
+        
+        button { background: var(--primary); border: none; cursor: pointer; font-weight: 600; transition: all 0.2s; margin-top: 10px; color: white; }
+        button:hover { background: #2980b9; transform: translateY(-1px); }
+        button:active { transform: translateY(0); }
+        button.secondary { background: #64748b; }
+        button.accent { background: #10b981; }
+        
+        .asset-item { background: var(--secondary-bg); padding: 10px; margin-top: 8px; border-radius: 4px; border: 1px solid var(--glass-border); font-size: 12px; display: flex; justify-content: space-between; align-items: center; color: var(--primary-text); }
+        .asset-info { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-grow: 1; margin-right: 10px; }
+        .asset-type { font-size: 10px; color: var(--highlight-text); text-transform: uppercase; font-weight: bold; }
+        .load-btn { width: auto; padding: 4px 8px; margin: 0; font-size: 11px; }
+
+        #log {
+            height: 250px;
+            background: #0f172a;
+            color: #38bdf8;
+            font-family: 'Fira Code', monospace;
+            font-size: 11px;
+            padding: 12px;
+            overflow-y: auto;
+            margin-top: 15px;
+            border-radius: 6px;
+            border: 1px solid #1e293b;
+            line-height: 1.5;
+            flex-shrink: 0;
+        }
+        #log::-webkit-scrollbar { width: 4px; }
+        #log::-webkit-scrollbar-track { background: #0f172a; }
+        #log::-webkit-scrollbar-thumb { background: #38bdf8; border-radius: 2px; }
+        .status-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; background: var(--secondary-bg); margin-left: 8px; }
+        .row { display: flex; gap: 10px; }
+        
+        /* 强制隐藏 Cesium 动画控件原有的 SVG 文字，防止重叠 */
+        .cesium-animation-svgText { display: none !important; }
+
+        /* 彻底隐藏 InfoBox 顶部的标题文字，防止重复和遮挡 */
+        .cesium-infoBox-title {
+            display: none !important;
+        }
+
+        /* 修复关闭按钮位置：强制靠右并美化 */
+        .cesium-infoBox-close {
+            left: auto !important;
+            right: 10px !important;
+            top: 10px !important;
+            background: rgba(255, 255, 255, 0.1) !important;
+            border-radius: 50% !important;
+            width: 24px !important;
+            height: 24px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            transition: background 0.2s !important;
+            color: white !important;
+            font-size: 18px !important;
+            line-height: 24px !important;
+            text-decoration: none !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+        }
+        .cesium-infoBox-close:hover {
+            background: rgba(231, 76, 60, 0.8) !important;
+        }
+
+        /* 编辑按钮样式 - 放在主页面以备后用 */
+        .edit-btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 5px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            font-weight: bold;
+            transition: background 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .edit-btn:hover { background: #2980b9; }
+
+        /* 量天尺样式 */
+        #altimeter {
+            position: absolute;
+            left: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 25px;
+            height: 60vh;
+            background: rgba(26, 28, 35, 0.7);
+            border: 1px solid #3d4451;
+            border-radius: 30px;
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px 0;
+            pointer-events: none;
+            box-shadow: 0 0 15px rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+        }
+        .ruler-mark {
+            width: 100%;
+            flex-grow: 1;
+            border-top: 1px solid rgba(236, 240, 241, 0.3);
+            position: relative;
+        }
+        .ruler-mark::after {
+            content: attr(data-label);
+            position: absolute;
+            left: 110%;
+            top: -7px;
+            font-size: 10px;
+            color: rgba(255, 255, 255, 0.8);
+            white-space: nowrap;
+        }
+        #altimeter-indicator {
+            position: absolute;
+            left: 5px;
+            right: 5px;
+            height: 4px;
+            background: var(--primary);
+            border-radius: 2px;
+            box-shadow: 0 0 8px var(--primary);
+            transition: top 0.3s ease-out;
+            z-index: 1001;
+        }
+        #altimeter-value {
+            position: absolute;
+            bottom: -35px;
+            left: 0;
+            background: var(--panel);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--primary);
+            border: 1px solid var(--primary);
+            white-space: nowrap;
+        }
+        .altimeter-title {
+            position: absolute;
+            top: -30px;
+            left: 0;
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--text);
+            text-shadow: 0 0 4px rgba(0,0,0,1);
+            white-space: nowrap;
+        }
+        /* --- VCP 标准标题栏 --- */
+        .title-bar {
+            height: 30px;
+            background: rgba(0, 0, 0, 0.2);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            color: var(--text);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 0 0 15px;
+            -webkit-app-region: drag;
+            position: fixed;
+            top: 0; left: 0; right: 0;
+            z-index: 2000;
+        }
+        .title-bar-text { font-size: 13px; font-weight: bold; opacity: 0.9; }
+        .title-bar-controls { display: flex; -webkit-app-region: no-drag; background: transparent !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+        .title-bar-button {
+            background: transparent !important; border: none !important; color: var(--text);
+            width: 45px; height: 30px; display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: background 0.2s;
+            border-radius: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+        .title-bar-button svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.2; }
+        .title-bar-button:hover { background: rgba(255, 255, 255, 0.1); }
+        .title-bar-button.active { color: var(--primary); }
+        .title-bar-button.close-button:hover { background: #e74c3c; color: white; }
+
+        .main-container {
+            display: flex;
+            width: 100%;
+            height: calc(100vh - 30px);
+            margin-top: 30px;
+            position: relative;
+        }
+
+        /* 侧边栏拖动手柄 */
+        #resizer {
+            width: 4px;
+            height: 100%;
+            background: transparent;
+            cursor: col-resize;
+            position: relative;
+            z-index: 101;
+            transition: background 0.2s;
+        }
+        #resizer:hover, #resizer.active {
+            background: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+        }
+        /* 自定义编辑弹窗样式 */
+        #editModalOverlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 3000;
+            backdrop-filter: blur(5px);
+        }
+        .edit-modal {
+            background: var(--bg);
+            width: 450px;
+            padding: 25px;
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 15px 50px rgba(0,0,0,0.5);
+            color: var(--text);
+            position: relative;
+        }
+        .edit-modal h4 { margin: 0 0 15px 0; color: var(--primary); }
+        .edit-modal textarea {
+            width: 100%;
+            height: 150px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            color: white;
+            padding: 12px;
+            font-family: inherit;
+            resize: vertical;
+            margin-bottom: 15px;
+        }
+        body.light-theme .edit-modal textarea { background: rgba(0, 0, 0, 0.05); color: #333; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+        .modal-actions button { width: auto; margin: 0; padding: 8px 20px; }
+
+        /* 准星样式 */
+        #crosshair {
+            position: fixed;
+            width: 40px;
+            height: 40px;
+            pointer-events: none;
+            display: none;
+            z-index: 9999;
+            transform: translate(-50%, -50%);
+        }
+        #crosshair::before, #crosshair::after {
+            content: '';
+            position: absolute;
+            background: var(--primary);
+            box-shadow: 0 0 8px var(--primary);
+        }
+        #crosshair::before {
+            top: 50%; left: 0; width: 100%; height: 2px;
+            margin-top: -1px;
+        }
+        #crosshair::after {
+            left: 50%; top: 0; height: 100%; width: 2px;
+            margin-left: -1px;
+        }
+        #crosshair .circle {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 16px; height: 16px;
+            border: 2px solid var(--primary);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 8px var(--primary);
+        }
+        
+        /* 选取模式下的地图光标 */
+        .picking-mode #cesiumContainer canvas {
+            cursor: crosshair !important;
+        }
+
+        /* 连线/删除 拆分按钮样式 */
+        .split-btn-container {
+            display: flex;
+            width: 70px;
+            height: 36px;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-top: 0;
+            flex-shrink: 0;
+            border: 1px solid var(--glass-border);
+        }
+        .split-btn-container button {
+            flex: 1;
+            margin-top: 0 !important;
+            height: 100% !important;
+            border-radius: 0 !important;
+            border: none !important;
+            font-size: 13px !important;
+            padding: 0 !important;
+            color: white !important;
+            font-weight: bold !important;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        .split-btn-left {
+            background: #10b981 !important;
+            border-right: 1px solid rgba(255, 255, 255, 0.3) !important;
+        }
+        .split-btn-left:hover { background: #059669 !important; }
+        .split-btn-right {
+            background: #ef4444 !important;
+        }
+        .split-btn-right:hover { background: #dc2626 !important; }
+    </style>
+</head>
+<body>
+    <div class="title-bar">
+        <div class="title-bar-text">千里纵目</div>
+        <div class="title-bar-controls">
+            <button id="pin-btn" class="title-bar-button" title="置顶">
+                <svg viewBox="0 0 10 10" style="transform: rotate(45deg);"><path d="M2,2 L8,2 L8,3 L7,3 L7,7 L8,8 L8,9 L2,9 L2,8 L3,7 L3,3 L2,3 Z" fill="none" stroke="currentColor"></path><line x1="5" y1="9" x2="5" y2="10" stroke="currentColor"></line></svg>
+            </button>
+            <button id="minimize-btn" class="title-bar-button" title="最小化">
+                <svg viewBox="0 0 10 10"><line x1="0" y1="5" x2="10" y2="5"></line></svg>
+            </button>
+            <button id="maximize-btn" class="title-bar-button" title="最大化">
+                <svg viewBox="0 0 10 10"><path d="M0.5,0.5 h9 v9 h-9 z"></path></svg>
+            </button>
+            <button id="close-btn" class="title-bar-button close-button" title="关闭">
+                <svg viewBox="0 0 10 10"><path d="M0.5,0.5 9.5,9.5 M9.5,0.5 0.5,9.5" fill="none"></path></svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- 自定义编辑弹窗 -->
+    <div id="editModalOverlay">
+        <div class="edit-modal">
+            <h4 id="modalTitle">编辑标绘标签</h4>
+            <textarea id="modalTextarea" placeholder="输入新的标签内容..."></textarea>
+            <div class="modal-actions">
+                <button class="secondary" onclick="closeEditModal()">取消</button>
+                <button id="modalSaveBtn">保存修改</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="crosshair"><div class="circle"></div></div>
+
+    <div class="main-container">
+        <div id="cesiumContainer"></div>
+        
+        <!-- 拖动手柄 -->
+        <div id="resizer"></div>
+    
+    <!-- 量天尺 -->
+    <div id="altimeter">
+        <div class="altimeter-title">量天尺</div>
+        <div id="altimeter-indicator"></div>
+        <div class="ruler-mark" data-label="九重天"></div>
+        <div class="ruler-mark" data-label="八重天"></div>
+        <div class="ruler-mark" data-label="七重天"></div>
+        <div class="ruler-mark" data-label="六重天"></div>
+        <div class="ruler-mark" data-label="五重天"></div>
+        <div class="ruler-mark" data-label="四重天"></div>
+        <div class="ruler-mark" data-label="三重天"></div>
+        <div class="ruler-mark" data-label="二重天"></div>
+        <div class="ruler-mark" data-label="一重天"></div>
+        <div id="altimeter-value">0 m</div>
+    </div>
+
+    <div id="controlPanel">
+        <div class="section">
+            <h3>1. 千里目 身份验证</h3>
+            <label>默认访问令牌 (访问令牌)</label>
+            <input type="password" id="ionToken" placeholder="粘贴你的访问令牌">
+            <div class="row">
+                <button onclick="initCesium()">初始化地图</button>
+                <button class="secondary" onclick="fetchAssets()">获取资产列表</button>
+            </div>
+        </div>
+
+        <div class="section" id="assetSection" style="display:none;">
+            <h3>2. 账户资产管理器</h3>
+            <div class="row" style="margin-bottom: 10px; gap: 5px;">
+                <input type="text" id="manualAssetId" placeholder="输入资产 ID" style="margin-top:0; flex-grow:1">
+                <select id="manualAssetType" style="margin-top:0; width:100px; height:38px;">
+                    <option value="IMAGERY">二维影像</option>
+                    <option value="3DTILES">三维模型</option>
+                </select>
+                <button class="load-btn" style="width:100px; height:38px; margin-top:0;" onclick="loadManualAsset()">加载</button>
+            </div>
+            <div id="assetList" style="max-height: 200px; overflow-y: auto; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                <!-- 资产项将在这里动态生成 -->
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>3. 教学标签</h3>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+                <input type="text" id="groupName" placeholder="分组名称 (如: 春秋战国)" value="默认分组">
+                <input type="text" id="drawName" placeholder="标签名称 (如: 珠峰)">
+                <textarea id="drawLabel" placeholder="标签内容 (历史、描述等)" style="height: 80px; resize: vertical;"></textarea>
+                <button class="accent" style="margin-top:0;" onclick="addDrawing()">添加并持久化</button>
+            </div>
+            
+            <div class="row" style="margin-top: 15px; align-items: center;">
+                <select id="linkGroup" style="margin-top:0; flex: 1.2; height: 36px; padding: 0 6px; font-size: 12px;" onchange="updateLinkSelectorsByGroup()">
+                    <option value="">选择组...</option>
+                </select>
+                <select id="linkStart" style="margin-top:0; flex: 1; height: 36px; padding: 0 6px; font-size: 12px;">
+                    <option value="">起点...</option>
+                </select>
+                <select id="linkEnd" style="margin-top:0; flex: 1; height: 36px; padding: 0 6px; font-size: 12px;">
+                    <option value="">终点...</option>
+                </select>
+                <div class="split-btn-container">
+                    <button class="split-btn-left" onclick="addLink()" title="建立连线">连</button>
+                    <button class="split-btn-right" onclick="removeLink()" title="删除连线">删</button>
+                </div>
+            </div>
+
+            <div class="row" style="margin-top: 10px;">
+                <button class="secondary" style="margin-top:0; font-size: 12px; padding: 8px;" onclick="syncCoursewareList()">刷新教案列表</button>
+                <button class="secondary" style="background:#e67e22; margin-top:0; font-size: 12px; padding: 8px;" onclick="clearMap()">清空地图图层</button>
+            </div>
+            <button class="accent" style="background:#e74c3c; margin-top:10px;" onclick="toggleDeduction()">烛阴 (光照与阴影)</button>
+            
+            <div id="coursewareList" style="margin-top: 15px; max-height: 200px; overflow-y: auto; border-top: 1px solid var(--border-color); padding-top: 10px;">
+                <!-- 教案列表将在这里动态生成 -->
+            </div>
+        </div>
+
+        <div id="log">千里目系统就绪。请输入令牌开始。</div>
+    </div>
+    </div> <!-- End of main-container -->
+
+    <script>
+        let viewer = null;
+        let currentToken = '';
+        const logEl = document.getElementById('log');
+        
+        // --- 三管道渲染架构管理器 ---
+        const PipelineManager = {
+            isProcessing: false,
+            // 1. 2D 影像管道
+            imagery: {
+                current: null,
+                async clear() {
+                    if (viewer) {
+                        viewer.imageryLayers.removeAll();
+                        this.current = null;
+                    }
+                }
+            },
+            // 2. 3D 模型管道
+            models: {
+                current: null,
+                async clear() {
+                    if (viewer && this.current) {
+                        viewer.scene.primitives.remove(this.current);
+                        this.current = null;
+                    }
+                }
+            },
+            // 3. 教案标绘管道
+            courseware: {
+                activeDataSources: new Map(),
+                async clear(groupName = null) {
+                    if (!viewer) return;
+                    if (groupName) {
+                        if (this.activeDataSources.has(groupName)) {
+                            viewer.dataSources.remove(this.activeDataSources.get(groupName));
+                            this.activeDataSources.delete(groupName);
+                        }
+                    } else {
+                        for (const ds of this.activeDataSources.values()) {
+                            viewer.dataSources.remove(ds);
+                        }
+                        this.activeDataSources.clear();
+                    }
+                }
+            },
+            // 互斥锁：防止并发加载导致的 Id.update 崩溃
+            async acquireLock() {
+                while (this.isProcessing) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+                this.isProcessing = true;
+            },
+            releaseLock() {
+                this.isProcessing = false;
+            }
+        };
+
+        // 向后端同步“场上”活跃组状态
+        async function syncActiveGroupsToBackend() {
+            const activeGroups = Array.from(PipelineManager.courseware.activeDataSources.keys());
+            try {
+                await fetch('/qianlimu/api/state/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ activeGroups })
+                });
+            } catch (e) {
+                console.error('[Qianlimu] Failed to sync active groups:', e);
+            }
+        }
+
+        // 页面加载后自动获取配置
+        window.addEventListener('DOMContentLoaded', async () => {
+            // 加载记忆的侧边栏宽度
+            const savedWidth = localStorage.getItem('qianlimu-sidebar-width');
+            if (savedWidth) {
+                document.getElementById('controlPanel').style.width = savedWidth + 'px';
+            }
+
+            // 侧边栏拖拽逻辑
+            const resizer = document.getElementById('resizer');
+            const panel = document.getElementById('controlPanel');
+            let isResizing = false;
+
+            resizer.addEventListener('mousedown', (e) => {
+                isResizing = true;
+                resizer.classList.add('active');
+                document.body.style.cursor = 'col-resize';
+                // 禁用 iframe 交互防止拖拽卡顿
+                const iframe = document.querySelector('iframe');
+                if (iframe) iframe.style.pointerEvents = 'none';
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (!isResizing) return;
+                
+                // 计算新宽度：从右侧往左拖拽
+                const newWidth = window.innerWidth - e.clientX;
+                if (newWidth >= 250 && newWidth <= 600) {
+                    panel.style.width = newWidth + 'px';
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                if (isResizing) {
+                    isResizing = false;
+                    resizer.classList.remove('active');
+                    document.body.style.cursor = 'default';
+                    const iframe = document.querySelector('iframe');
+                    if (iframe) iframe.style.pointerEvents = 'auto';
+                    
+                    // 记忆宽度
+                    localStorage.setItem('qianlimu-sidebar-width', panel.offsetWidth);
+                }
+            });
+
+            // 监听主题更新
+            if (window.electronAPI && window.electronAPI.onThemeUpdated) {
+                const updateThemeUI = (themeData) => {
+                    // console.log('[Qianlimu] Theme updated:', themeData);
+                    // 处理 themeData 可能是字符串或对象的情况
+                    const isDark = (typeof themeData === 'string') ? themeData === 'dark' : (themeData.mode !== 'light');
+                    
+                    if (isDark) {
+                        document.body.classList.remove('light-theme');
+                    } else {
+                        document.body.classList.add('light-theme');
+                    }
+
+                    // 提取并修正壁纸路径，直接注入到 CSS 变量中
+                    if (typeof themeData === 'object' && themeData.variables) {
+                        const darkVars = themeData.variables.dark;
+                        const lightVars = themeData.variables.light;
+                        
+                        if (darkVars && darkVars['--chat-wallpaper-dark']) {
+                            // 关键修复：确保 url() 格式正确，并替换路径
+                            let wpDark = darkVars['--chat-wallpaper-dark'];
+                            wpDark = wpDark.replace(/\.\.\/assets\//g, '/assets/');
+                            // console.log('[Qianlimu] Setting dark wallpaper:', wpDark);
+                            document.documentElement.style.setProperty('--chat-wallpaper-dark', wpDark);
+                        }
+                        if (lightVars && lightVars['--chat-wallpaper-light']) {
+                            let wpLight = lightVars['--chat-wallpaper-light'];
+                            wpLight = wpLight.replace(/\.\.\/assets\//g, '/assets/');
+                            // console.log('[Qianlimu] Setting light wallpaper:', wpLight);
+                            document.documentElement.style.setProperty('--chat-wallpaper-light', wpLight);
+                        }
+                    }
+                };
+
+                window.electronAPI.onThemeUpdated(updateThemeUI);
+
+                // 获取初始主题
+                window.electronAPI.getCurrentTheme().then(updateThemeUI);
+            }
+
+            // 窗口控制逻辑
+            let isPinned = false;
+            const pinBtn = document.getElementById('pin-btn');
+            pinBtn.addEventListener('click', async () => {
+                if (window.electronAPI && window.electronAPI.setAlwaysOnTop) {
+                    isPinned = !isPinned;
+                    const result = await window.electronAPI.setAlwaysOnTop(isPinned);
+                    isPinned = result; // 同步真实状态
+                    if (isPinned) {
+                        pinBtn.classList.add('active');
+                        pinBtn.title = "取消置顶";
+                    } else {
+                        pinBtn.classList.remove('active');
+                        pinBtn.title = "置顶";
+                    }
+                }
+            });
+
+            document.getElementById('minimize-btn').addEventListener('click', () => {
+                if (window.electronAPI) window.electronAPI.minimizeWindow();
+            });
+            document.getElementById('maximize-btn').addEventListener('click', () => {
+                if (window.electronAPI) window.electronAPI.maximizeWindow();
+            });
+            document.getElementById('close-btn').addEventListener('click', () => {
+                if (window.electronAPI && window.electronAPI.closeQianlimuWindow) {
+                    window.electronAPI.closeQianlimuWindow();
+                }
+            });
+
+            try {
+                const response = await fetch('/qianlimu/api/config');
+                const config = await response.json();
+                
+                if (config.ION_TOKEN) {
+                    document.getElementById('ionToken').value = config.ION_TOKEN;
+                    log('已从配置文件加载令牌', 'success');
+                    
+                    // 如果有 token，尝试自动初始化
+                    await initCesium();
+                    
+                    // 如果有默认地图 ID，尝试加载
+                    if (config.DEFAULT_MAP_ID && viewer) {
+                        log(`正在加载默认地图 ID: ${config.DEFAULT_MAP_ID}`, 'info');
+                        // 默认地图通常是影像
+                        await loadAsset(parseInt(config.DEFAULT_MAP_ID), 'IMAGERY');
+                    }
+                }
+            } catch (e) {
+                log('加载配置文件失败: ' + e.message, 'error');
+            }
+        });
+
+        // 侧边栏交互逻辑
+        const controlPanel = document.getElementById('controlPanel');
+        
+        // 右键隐藏侧边栏
+        controlPanel.addEventListener('contextmenu', (e) => {
+            if (!e.ctrlKey) {
+                e.preventDefault();
+                controlPanel.style.display = 'none';
+                log('侧边栏已隐藏。按住 Ctrl 并右击地图区域可唤出。', 'info');
+            }
+        });
+
+        // Ctrl + 右键唤出侧边栏
+        window.addEventListener('contextmenu', (e) => {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                controlPanel.style.display = 'flex';
+                log('侧边栏已唤出', 'info');
+            }
+        });
+
+        function log(msg, type = 'info') {
+            const colors = { info: '#38bdf8', success: '#10b981', error: '#f43f5e', cmd: '#fbbf24' };
+            const time = new Date().toLocaleTimeString();
+            logEl.innerHTML += `<div style="color: ${colors[type]}">[${time}] ${msg}</div>`;
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        function initCesium() {
+            currentToken = document.getElementById('ionToken').value.trim();
+            if (!currentToken) return alert('请先输入 Cesium Ion Token');
+            
+            Cesium.Ion.defaultAccessToken = currentToken;
+            if (viewer) {
+                viewer.destroy();
+                viewer = null;
+            }
+            
+            try {
+                viewer = new Cesium.Viewer('cesiumContainer', {
+                    terrain: Cesium.Terrain.fromWorldTerrain(),
+                    baseLayerPicker: true,
+                    geocoder: true,
+                    animation: true,     // 重新启用动画控件
+                    timeline: true,      // 重新启用时间轴
+                    fullscreenButton: false,
+                    vrButton: false,
+                    imageryProvider: new Cesium.GridImageryProvider(),
+                    orderIndependentTransparency: true,
+                    shadows: false,
+                    contextOptions: {
+                        webgl: { preserveDrawingBuffer: true }
+                    }
+                });
+
+                // --- 1. 基础性能配置 (优化渐进式加载) ---
+                // 降低 SSE 会让引擎更早请求高分辨率瓦片，但会增加性能开销。
+                viewer.scene.globe.maximumScreenSpaceError = 1.8;
+                // 增加瓦片缓存，减少重复下载
+                viewer.scene.globe.tileCacheSize = 172;
+                // 增加并发请求数，加快下载速度
+                Cesium.RequestScheduler.maximumRequestsPerServer = 16;
+                // 预加载祖先瓦片，减少移动相机时的白块/模糊感
+                viewer.scene.globe.preloadAncestors = true;
+                // 预加载兄弟瓦片
+                viewer.scene.globe.preloadSiblings = true;
+                // 优化瓦片加载优先级：优先加载当前视野中心的瓦片
+                viewer.scene.globe.loadingQueueThreshold = 2;
+                
+                // --- 2. 渲染特性配置 ---
+                viewer.resolutionScale = window.devicePixelRatio || 1.0;
+                viewer.scene.logarithmicDepthBuffer = true;
+                viewer.scene.highDynamicRange = true;
+                viewer.scene.pickTranslucentDepth = true;
+                viewer.scene.globe.depthTestAgainstTerrain = true;
+                viewer.scene.globe.enableLighting = false;
+                viewer.terrainShadows = Cesium.ShadowMode.DISABLED;
+                
+                // --- 盘外招 1: 动态 SSE (相机移动时临时放宽，停止时收紧) ---
+                let moveTimer;
+                viewer.camera.moveStart.addEventListener(() => {
+                    // 移动时稍微放宽 SSE，优先保证帧率和基础加载
+                    viewer.scene.globe.maximumScreenSpaceError = 3.0;
+                    if (moveTimer) clearTimeout(moveTimer);
+                });
+                viewer.camera.moveEnd.addEventListener(() => {
+                    // 停止移动后，立即收紧 SSE，强制加载最高清瓦片
+                    moveTimer = setTimeout(() => {
+                        viewer.scene.globe.maximumScreenSpaceError = 1.6;
+                    }, 200);
+                });
+
+                viewer.scene.renderError.addEventListener((scene, error) => {
+                    console.error("Cesium Render Error:", error);
+                    log('渲染引擎异常: ' + error.message, 'error');
+                    // 发生错误时强制恢复基础状态
+                    if (viewer.scene.globe) {
+                        viewer.scene.globe.show = true;
+                        viewer.scene.postProcessStages.enabled = false;
+                    }
+                });
+
+                // --- 3. 相机行为约束 (解决视角倒置/翻转问题) ---
+                viewer.camera.constrainedAxis = Cesium.Cartesian3.UNIT_Z; // 强制向上向量为 Z 轴
+                viewer.scene.screenSpaceCameraController.enableCollisionDetection = true;
+
+                // 显露版权信息 (根据 Cesium 使用条款，必须保留数据提供商的版权标识)
+                if (viewer.cesiumWidget.creditContainer) {
+                    viewer.cesiumWidget.creditContainer.style.display = 'block';
+                }
+
+                // --- 汉化时间轴与动画控件 (新中国周年、天干地支、时辰) ---
+                const tiangan = ["甲", "乙", "丙", "丁", "戊", "己", "庚", "辛", "壬", "癸"];
+                const dizhi = ["子", "丑", "寅", "卯", "辰", "巳", "午", "未", "申", "酉", "戌", "亥"];
+                const shichen = ["子时", "丑时", "寅时", "卯时", "辰时", "巳时", "午时", "未时", "申时", "酉时", "戌时", "亥时"];
+
+                function getGanZhi(year) {
+                    let g = (year - 3) % 10;
+                    let z = (year - 3) % 12;
+                    if (g === 0) g = 10;
+                    if (z === 0) z = 12;
+                    return tiangan[g - 1] + dizhi[z - 1];
+                }
+
+                function getShichen(hour) {
+                    // 子时是 23:00 - 01:00
+                    let index = Math.floor((hour + 1) / 2) % 12;
+                    return shichen[index];
+                }
+
+                // 格式化时间轴日期
+                viewer.timeline.makeLabel = function(time) {
+                    const date = Cesium.JulianDate.toDate(time);
+                    const year = date.getFullYear();
+                    const month = date.getMonth() + 1;
+                    const day = date.getDate();
+                    const hour = date.getHours();
+                    const min = date.getMinutes();
+                    
+                    const xzhYear = year - 1949; // 新中国周年 (1949年为0周年)
+                    const ganzhi = getGanZhi(year);
+                    const sc = getShichen(hour);
+                    
+                    return `新中国${xzhYear}周年(${ganzhi}) ${month}月${day}日 ${sc} ${hour.toString().padStart(2, '0')}:${min.toString().padStart(2, '0')}`;
+                };
+
+                // 格式化左下角动画控件时间
+                if (viewer.animation) {
+                    viewer.animation.viewModel.dateLabel = ""; // 隐藏原有的日期标签
+                    const originalUpdate = viewer.animation.viewModel.update;
+                    
+                    // 劫持动画控件的显示逻辑
+                    const dateLabelEl = viewer.animation.container.querySelector('.cesium-animation-svgText');
+                    if (dateLabelEl) {
+                        viewer.clock.onTick.addEventListener(() => {
+                            const time = viewer.clock.currentTime;
+                            const date = Cesium.JulianDate.toDate(time);
+                            const year = date.getFullYear();
+                            const xzhYear = year - 1949;
+                            const ganzhi = getGanZhi(year);
+                            const month = date.getMonth() + 1;
+                            const day = date.getDate();
+                            const hour = date.getHours();
+                            const sc = getShichen(hour);
+                            
+                            // 更新动画控件上的文字显示
+                            const timeStr = `${month}月${day}日 ${sc}`;
+                            const yearStr = `新中国成立${xzhYear}周年(${ganzhi})`;
+                            
+                            // 查找或创建自定义显示元素
+                            let customLabel = viewer.animation.container.querySelector('#custom-time-label');
+                            if (!customLabel) {
+                                customLabel = document.createElement('div');
+                                customLabel.id = 'custom-time-label';
+                                customLabel.style.position = 'absolute';
+                                customLabel.style.top = '45%'; // 调整到圆盘中心位置
+                                customLabel.style.left = '50%';
+                                customLabel.style.transform = 'translate(-50%, -50%)';
+                                customLabel.style.color = '#ecf0f1';
+                                customLabel.style.fontSize = '13px';
+                                customLabel.style.fontWeight = 'bold';
+                                customLabel.style.pointerEvents = 'none';
+                                customLabel.style.textAlign = 'center';
+                                customLabel.style.width = '100px';
+                                customLabel.style.textShadow = '0 0 4px rgba(0,0,0,0.8)';
+                                viewer.animation.container.appendChild(customLabel);
+                            }
+                            customLabel.innerHTML = `<div style="font-size:11px; opacity:0.9">${yearStr}</div><div style="margin-top:2px">${timeStr}</div>`;
+                        });
+                    }
+                }
+
+                log('千里目 渲染引擎初始化成功', 'success');
+                document.getElementById('assetSection').style.display = 'block';
+
+                // 初始化量天尺逻辑
+                setupAltimeter();
+
+                // 监听 InfoBox 加载，注入样式和处理点击
+                setupInfoBoxCustomization();
+
+                // 启动指令轮询
+                startCommandPolling();
+            } catch (e) {
+                log('初始化失败: ' + e.message, 'error');
+            }
+        }
+
+        async function fetchAssets() {
+            if (!currentToken) return alert('请先初始化地图');
+            log('正在同步账户资产 (包含 2D 影像与 3D 模型)...', 'info');
+            
+            const endpoints = [
+                'https://api.ion.cesium.com/v1/assets?limit=100',
+                'https://api.cesium.com/v1/assets?limit=100'
+            ];
+
+            for (const url of endpoints) {
+                try {
+                    const response = await fetch(url, {
+                        headers: { 'Authorization': `Bearer ${currentToken}` }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data && data.items) {
+                            // 确保包含所有影像和 3D 模型，不区分大小写
+                            const filteredItems = data.items.filter(item => {
+                                const t = item.type.toUpperCase();
+                                return t.includes('IMAGERY') || t.includes('3D') || t.includes('GOOGLE');
+                            });
+                            renderAssetList(filteredItems);
+                            log(`同步成功: 发现 ${filteredItems.length} 个教学可用资产`, 'success');
+                            return;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`Endpoint ${url} failed, trying next...`);
+                }
+            }
+            log('资产同步失败，请检查令牌权限或网络代理设置', 'error');
+        }
+
+        function renderAssetList(items) {
+            const listEl = document.getElementById('assetList');
+            listEl.innerHTML = '';
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'asset-item';
+                const t = item.type.toUpperCase();
+                const is3D = t.includes('3D') || t.includes('TILES');
+                const displayType = is3D ? '3D 模型' : '2D 影像';
+                div.innerHTML = `
+                    <div class="asset-info">
+                        <div style="font-weight:bold">${item.name}</div>
+                        <div class="asset-type" style="color: ${is3D ? '#f1c40f' : '#3498db'}">${displayType} (ID: ${item.id})</div>
+                    </div>
+                    <button class="load-btn" onclick="loadAsset(${item.id}, '${item.type}')">切换至此地图</button>
+                `;
+                listEl.appendChild(div);
+            });
+        }
+
+        async function clearMap() {
+            if (!viewer) return;
+            await PipelineManager.acquireLock();
+            try {
+                await PipelineManager.imagery.clear();
+                await PipelineManager.models.clear();
+                await PipelineManager.courseware.clear();
+                log('地图已清空', 'info');
+                await syncActiveGroupsToBackend();
+            } finally {
+                PipelineManager.releaseLock();
+            }
+        }
+
+        async function loadAsset(assetId, type) {
+            await PipelineManager.acquireLock();
+            log(`正在切换地图资产: ${assetId} (${type})...`, 'info');
+            try {
+                // 1. 暂时挂起事件，防止加载期间的竞态冲突
+                viewer.entities.suspendEvents();
+                // 确保拾取深度在加载期间不会触发冲突，但在 PipelineManager 释放锁后会恢复
+                viewer.scene.pickTranslucentDepth = false;
+                
+                const t = type.toUpperCase();
+                const is3D = t.includes('3D') || t.includes('TILES') || t.includes('GOOGLE') || assetId === 2275207;
+
+                if (is3D) {
+                    // --- 3D 管道处理 ---
+                    log("正在加载 3D 瓦片集...", "info");
+                    
+                    // 清理旧的 3D 模型，但不触碰教案标绘
+                    await PipelineManager.models.clear();
+                    
+                    viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+                    viewer.scene.globe.show = true;
+                    viewer.scene.globe.baseColor = Cesium.Color.BLACK;
+
+                    const tileset = await Cesium.Cesium3DTileset.fromIonAssetId(assetId, {
+                        accessToken: currentToken,
+                        // 3D 管道优化：提高加载速度和精细度
+                        maximumScreenSpaceError: 8,
+                        progressiveResolutionHeightFraction: 0.5,
+                        preloadWhenHidden: true,
+                        immediatelyLoadDesiredLevelOfDetail: false,
+                        // --- 盘外招 2: 跳过中间层级 (Skip LOD) ---
+                        // 这是一个强力优化，直接跳过中间层级去加载最合适的层级，减少替换次数
+                        skipLevelOfDetail: true,
+                        baseScreenSpaceError: 1024,
+                        skipScreenSpaceErrorFactor: 16,
+                        skipLevels: 1,
+                        loadSiblings: true // 配合跳过层级，预加载兄弟节点防止闪烁
+                    });
+                    
+                    viewer.scene.primitives.add(tileset);
+                    PipelineManager.models.current = tileset;
+                    
+                    if (t.includes('GOOGLE')) {
+                        log("应用 Google 3D 渲染优化...", "info");
+                        viewer.scene.globe.show = false;
+                        viewer.scene.skyAtmosphere.show = false;
+                    }
+
+                    // 视角定位
+                    if (t.includes('GOOGLE')) {
+                        viewer.camera.flyTo({
+                            destination: Cesium.Cartesian3.fromDegrees(116.39, 39.9, 20000000),
+                            duration: 2
+                        });
+                    } else {
+                        await viewer.zoomTo(tileset, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-45), tileset.boundingSphere.radius * 2.0));
+                    }
+                } else {
+                    // --- 2D 管道处理 ---
+                    log("正在加载 2D 影像图层...", "info");
+                    
+                    // 清理旧的 3D 模型，保留教案标绘
+                    await PipelineManager.models.clear();
+                    viewer.scene.globe.show = true;
+                    viewer.scene.skyAtmosphere.show = true;
+
+                    const provider = await Cesium.IonImageryProvider.fromAssetId(assetId, {
+                        accessToken: currentToken
+                    });
+                    
+                    const newLayer = viewer.imageryLayers.addImageryProvider(provider);
+                    // 渐进式移除旧图层
+                    if (PipelineManager.imagery.current) {
+                        viewer.imageryLayers.remove(PipelineManager.imagery.current);
+                    }
+                    PipelineManager.imagery.current = newLayer;
+                    
+                    try {
+                        viewer.terrainProvider = await Cesium.Terrain.fromIonAssetId(1);
+                    } catch (e) {
+                        viewer.terrainProvider = new Cesium.EllipsoidTerrainProvider();
+                    }
+                }
+                
+                log(`地图已成功切换至资产 ${assetId}`, 'success');
+                
+                // 给渲染引擎留出缓冲时间，确保 Pick ID 映射表更新完成
+                await new Promise(resolve => setTimeout(resolve, 300));
+                
+            } catch (e) {
+                console.error("Load Asset Error:", e);
+                log(`切换失败: ${e.message}`, 'error');
+            } finally {
+                viewer.entities.resumeEvents();
+                viewer.scene.pickTranslucentDepth = true; // 恢复拾取深度
+                PipelineManager.releaseLock();
+            }
+        }
+
+        async function loadManualAsset() {
+            const id = document.getElementById('manualAssetId').value.trim();
+            const type = document.getElementById('manualAssetType').value;
+            if (!id) return alert('请输入资产 ID');
+            
+            log(`手动加载请求: ID=${id}, 类型=${type}`, 'info');
+            await loadAsset(parseInt(id), type);
+        }
+
+        async function callPlugin(payload) {
+            // 翻译指令名称
+            const cmdNames = {
+                'AddDrawing': '添加标绘',
+                'LoadCourseware': '加载教案',
+                'FlyTo': '飞行至',
+                'RemoveDrawings': '删除标绘'
+            };
+            log(`调用插件: ${cmdNames[payload.command] || payload.command}`, 'cmd');
+            try {
+                // 标记为 UI 触发，防止后端指令重入导致死循环
+                const response = await fetch('/qianlimu/api/plugin', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...payload, uiTriggered: true })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    log(`插件响应: ${data.result.message}`, 'success');
+                    // 如果返回了最新的分组数据，立即更新 UI 列表
+                    if (data.result.groups) {
+                        renderCoursewareList(data.result.groups);
+                        updateLinkSelectors(data.result.groups);
+                    }
+                    return data.result;
+                } else {
+                    log(`插件错误: ${data.error}`, 'error');
+                }
+            } catch (e) {
+                log(`网络错误: ${e.message}`, 'error');
+            }
+            return null;
+        }
+
+        let isPickingLocation = false;
+        const crosshair = document.getElementById('crosshair');
+
+        function startPickingLocation() {
+            if (!viewer) return alert('请先初始化地图');
+            
+            const name = document.getElementById('drawName').value;
+            if (!name) return alert('请先输入标签名称，再点击添加');
+
+            isPickingLocation = true;
+            crosshair.style.display = 'block';
+            document.body.classList.add('picking-mode');
+            log('进入选取模式：请在地图上点击目标位置以完成标绘', 'info');
+
+            // 监听鼠标移动，让准星跟随
+            const moveHandler = (e) => {
+                if (!isPickingLocation) return;
+                crosshair.style.left = e.clientX + 'px';
+                crosshair.style.top = e.clientY + 'px';
+            };
+            window.addEventListener('mousemove', moveHandler);
+
+            // 创建一次性点击监听
+            const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+            handler.setInputAction(async (click) => {
+                // 获取点击位置的经纬度
+                const ray = viewer.camera.getPickRay(click.position);
+                const cartesian = viewer.scene.globe.pick(ray, viewer.scene);
+                
+                if (Cesium.defined(cartesian)) {
+                    const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+                    const lon = Cesium.Math.toDegrees(cartographic.longitude);
+                    const lat = Cesium.Math.toDegrees(cartographic.latitude);
+                    
+                    // 执行原本的添加逻辑
+                    await performAddDrawing(lon, lat);
+                    
+                    // 退出选取模式
+                    stopPickingLocation();
+                    handler.destroy();
+                    window.removeEventListener('mousemove', moveHandler);
+                }
+            }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+            // 右键取消选取
+            handler.setInputAction(() => {
+                stopPickingLocation();
+                handler.destroy();
+                window.removeEventListener('mousemove', moveHandler);
+                log('已取消选取', 'info');
+            }, Cesium.ScreenSpaceEventType.RIGHT_CLICK);
+        }
+
+        function stopPickingLocation() {
+            isPickingLocation = false;
+            crosshair.style.display = 'none';
+            document.body.classList.remove('picking-mode');
+        }
+
+        async function addDrawing() {
+            // 优化：不再直接添加，而是进入选取模式
+            startPickingLocation();
+        }
+
+        async function performAddDrawing(lon, lat) {
+            const groupName = document.getElementById('groupName').value || "默认分组";
+            const name = document.getElementById('drawName').value;
+            const label = document.getElementById('drawLabel').value;
+
+            const payload = {
+                command: 'AddDrawing',
+                groupName: groupName,
+                name: name,
+                largeRegion: '地图选取',
+                smallRegion: '精准标绘',
+                longitude: lon,
+                latitude: lat,
+                height: 500,
+                label: label || name
+            };
+            
+            await callPlugin(payload);
+            await syncCoursewareList();
+            await loadGroupToMap(groupName);
+            log(`标绘 [${name}] 已精准添加到坐标: ${lon.toFixed(6)}, ${lat.toFixed(6)}`, 'success');
+        }
+
+        async function addLink() {
+            const groupName = document.getElementById('linkGroup').value;
+            const startName = document.getElementById('linkStart').value;
+            const endName = document.getElementById('linkEnd').value;
+            if (!groupName || !startName || !endName) return alert('请选择组、起点和终点');
+            if (startName === endName) return alert('起点和终点不能相同');
+
+            const result = await callPlugin({ command: 'LoadCourseware' });
+            if (!result || !result.groups) return;
+
+            const group = result.groups.find(g => g.name === groupName);
+            const drawing = group.drawings.find(d => d.name === startName);
+            if (!drawing) return;
+
+            const associations = drawing.associations || [];
+            if (!associations.includes(endName)) {
+                associations.push(endName);
+            }
+
+            const payload = {
+                command: 'AddDrawing',
+                groupName: groupName,
+                name: drawing.name,
+                label: drawing.label,
+                largeRegion: drawing.region.large,
+                smallRegion: drawing.region.small,
+                longitude: drawing.position.longitude,
+                latitude: drawing.position.latitude,
+                associations: associations,
+                color: drawing.style ? drawing.style.color : 'red',
+                size: drawing.style ? (drawing.style.pointSize || drawing.style.size) : 10
+            };
+
+            await callPlugin(payload);
+            await syncCoursewareList();
+            // 连线后立即在地图上显示/刷新该组
+            await loadGroupToMap(groupName);
+        }
+
+        async function removeLink() {
+            const groupName = document.getElementById('linkGroup').value;
+            const startName = document.getElementById('linkStart').value;
+            const endName = document.getElementById('linkEnd').value;
+            if (!groupName || !startName || !endName) return alert('请选择组、起点和终点');
+            if (startName === endName) return alert('起点和终点不能相同');
+
+            const lineName = `${startName}-${endName}`;
+            
+            await callPlugin({
+                command: 'RemoveDrawings',
+                groupName: groupName,
+                level: 'line',
+                names: lineName
+            });
+            
+            await syncCoursewareList();
+            // 刷新地图显示
+            await loadGroupToMap(groupName);
+        }
+
+        async function syncCoursewareList() {
+            try {
+                const result = await callPlugin({ command: 'LoadCourseware' });
+                if (!result) return;
+                
+                // 仅更新 UI 列表，不自动加载到地图
+                renderCoursewareList(result.groups || []);
+                updateLinkSelectors(result.groups || []);
+                log('教案列表已刷新', 'success');
+            } catch (e) {
+                log('刷新列表失败: ' + e.message, 'error');
+            }
+        }
+
+        async function loadGroupToMap(groupName) {
+            if (!viewer) return;
+            await PipelineManager.acquireLock();
+            try {
+                log(`正在加载/刷新组 [${groupName}]...`, 'info');
+                const result = await callPlugin({ command: 'LoadCourseware' });
+                if (!result || !result.groups) return;
+
+                const group = result.groups.find(g => g.name === groupName);
+                
+                // 如果组不存在，则清理
+                if (!group) {
+                    await PipelineManager.courseware.clear(groupName);
+                    await syncActiveGroupsToBackend();
+                    return;
+                }
+    
+                // 清理该组旧的数据源
+                await PipelineManager.courseware.clear(groupName);
+
+                // 构造该组的局部 CZML
+                const packets = [
+                    { id: 'document', name: groupName, version: '1.0' }
+                ];
+
+                const drawingMap = new Map();
+                const adj = new Map();
+                group.drawings.forEach(d => {
+                    drawingMap.set(d.name, d);
+                    adj.set(d.name, []);
+                });
+
+                // 1. 建立邻接表用于拓扑分析
+                group.drawings.forEach(d => {
+                    if (d.associations) {
+                        d.associations.forEach(targetName => {
+                            if (drawingMap.has(targetName)) {
+                                adj.get(d.name).push(targetName);
+                                adj.get(targetName).push(d.name);
+                            }
+                        });
+                    }
+                });
+
+                // 2. 棋子着色逻辑 (BFS 二分图着色)
+                const colors = new Map(); // name -> 'black' | 'white' | 'yinyang'
+                const visited = new Set();
+
+                group.drawings.forEach(d => {
+                    if (visited.has(d.name)) return;
+                    
+                    const neighbors = adj.get(d.name);
+                    if (!neighbors || neighbors.length === 0) {
+                        colors.set(d.name, 'yinyang');
+                        visited.add(d.name);
+                        return;
+                    }
+
+                    // 对连通分量进行黑白交替着色
+                    const queue = [[d.name, 'black']];
+                    visited.add(d.name);
+                    while (queue.length > 0) {
+                        const [curr, color] = queue.shift();
+                        colors.set(curr, color);
+                        const nextColor = color === 'black' ? 'white' : 'black';
+                        
+                        adj.get(curr).forEach(neighbor => {
+                            if (!visited.has(neighbor)) {
+                                visited.add(neighbor);
+                                queue.push([neighbor, nextColor]);
+                            }
+                        });
+                    }
+                });
+
+                const qiziMap = {
+                    'yinyang': '/assets/qizi/阴阳.png',
+                    'black': '/assets/qizi/黑.png',
+                    'white': '/assets/qizi/白.png'
+                };
+
+                group.drawings.forEach(d => {
+                    const entityId = `${groupName}_${d.name}`;
+                    const qiziType = colors.get(d.name) || 'yinyang';
+                    
+                    packets.push({
+                        id: entityId,
+                        name: d.name,
+                        position: { cartographicDegrees: [d.position.longitude, d.position.latitude, 500] },
+                        billboard: {
+                            image: qiziMap[qiziType],
+                            width: 24,
+                            height: 24,
+                            heightReference: 'RELATIVE_TO_GROUND',
+                            verticalOrigin: 'CENTER',
+                            disableDepthTestDistance: 10000 // 恢复遮挡
+                        },
+                        // 灵气/雾气特效：使用第二个 Billboard 实现渐变仙气感
+                        // 这种方式可以像标绘点一样在任何高度可见，并支持 disableDepthTestDistance
+                        // mistImage 是一个径向渐变的 SVG
+                        mist: {
+                            id: `${entityId}_mist`,
+                            name: `${d.name}_雾气`,
+                            position: { cartographicDegrees: [d.position.longitude, d.position.latitude, 500] },
+                            billboard: {
+                                image: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTI4IiBoZWlnaHQ9IjEyOCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZGVmcz48cmFkaWFsR3JhZGllbnQgaWQ9ImdyYWQiIGN4PSI1MCUiIGN5PSI1MCUiIHI9IjUwJSI+PHN0b3Agb2Zmc2V0PSIwJSIgc3R5bGU9InN0b3AtY29sb3I6d2hpdGU7c3RvcC1vcGFjaXR5OjEiIC8+PHN0b3Agb2Zmc2V0PSIxMDAlIiBzdHlsZT0ic3RvcC1jb2xvcjp3aGl0ZTtzdG9wLW9wYWNpdHk6MCIgLz48L3JhZGlhbEdyYWRpZW50PjwvZGVmcz48Y2lyY2xlIGN4PSI2NCIgY3k9IjY0IiByPSI2NCIgZmlsbD0idXJsKCNncmFkKSIgLz48L3N2Zz4=",
+                                width: 32, // 缩小范围
+                                height: 32,
+                                color: { rgba: [255, 223, 0, 120] }, // 金色渐变雾气
+                                heightReference: 'RELATIVE_TO_GROUND',
+                                verticalOrigin: 'CENTER',
+                                disableDepthTestDistance: 10000, // 恢复遮挡
+                                eyeOffset: { cartesian: [0, 0, 10] } // 稍微推后，确保在棋子下方
+                            }
+                        },
+                        label: {
+                            text: d.name,
+                            font: 'bold 64px sans-serif',
+                            fillColor: { rgba: [255, 255, 255, 255] },
+                            outlineColor: { rgba: [0, 0, 0, 255] },
+                            outlineWidth: 4,
+                            style: 'FILL_AND_OUTLINE',
+                            scale: 0.25,
+                            pixelOffset: { cartesian2: [0, -40] },
+                            horizontalOrigin: 'CENTER',
+                            verticalOrigin: 'BOTTOM',
+                            heightReference: 'RELATIVE_TO_GROUND',
+                            show: true,
+                            disableDepthTestDistance: 10000 // 缩小深度测试禁用距离，防止在地球背面可见
+                        },
+                        description: `
+                            <div style="font-family: 'Microsoft YaHei', sans-serif; color: #ecf0f1; font-size: 13px; padding-top: 25px;">
+                                <div style="margin-bottom: 8px; font-weight: bold; font-size: 16px; color: #fff;">${d.name}</div>
+                                <div style="margin-bottom: 5px; opacity: 0.6; font-size: 11px;">分组: ${groupName}</div>
+                                <div style="margin-bottom: 12px; line-height: 1.5;">${d.label || "暂无描述"}</div>
+                                <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 8px; text-align: right;">
+                                    <button class="edit-btn" data-group="${groupName}" data-name="${d.name}">编辑标签</button>
+                                </div>
+                            </div>
+                        `
+                    });
+                    
+                    // 如果有雾气配置，先推入雾气，再推入棋子，确保层级正确
+                    if (packets[packets.length-1].mist) {
+                        const mist = packets[packets.length-1].mist;
+                        delete packets[packets.length-1].mist;
+                        packets.splice(packets.length-1, 0, mist);
+                    }
+
+                    if (d.associations) {
+                        d.associations.forEach(targetName => {
+                            const target = drawingMap.get(targetName);
+                            if (target) {
+                                packets.push({
+                                    id: `link_${entityId}_${targetName}`,
+                                    polyline: {
+                                        positions: {
+                                            cartographicDegrees: [
+                                                d.position.longitude, d.position.latitude, 0,
+                                                target.position.longitude, target.position.latitude, 0
+                                            ]
+                                        },
+                                        width: 3,
+                                        material: {
+                                            polylineGlow: {
+                                                color: { rgba: [255, 223, 0, 255] }, // 亮金色 (Bright Gold)
+                                                glowPower: 0.3
+                                            }
+                                        },
+                                        clampToGround: true
+                                    }
+                                });
+                            }
+                        });
+                    }
+                });
+
+                const dataSource = await Cesium.CzmlDataSource.load(packets);
+                // 为该数据源设置一个名称，方便后续按组清理（如果需要）
+                dataSource.name = "group_" + groupName;
+                await viewer.dataSources.add(dataSource);
+                PipelineManager.courseware.activeDataSources.set(groupName, dataSource);
+                await syncActiveGroupsToBackend();
+                
+                // 修正贴地属性并注入旋转特效
+                dataSource.entities.values.forEach(entity => {
+                    if (entity.label) {
+                        const val = entity.label.text.getValue();
+                        entity._originalName = typeof val === 'string' ? val : entity.name;
+                    }
+
+                    // 为棋子添加旋转特效
+                    if (entity.billboard) {
+                        let rotation = Math.random() * Math.PI * 2; // 随机初始角度
+                        const rotationSpeed = 0.015; // 旋转速度
+                        entity.billboard.rotation = new Cesium.CallbackProperty(() => {
+                            rotation += rotationSpeed;
+                            return rotation;
+                        }, false);
+                    }
+                });
+
+                setupEntityClick();
+                log(`组 [${groupName}] 已成功加载到地图`, 'success');
+            } catch (e) {
+                log('加载组失败: ' + e.message, 'error');
+            } finally {
+                PipelineManager.releaseLock();
+            }
+        }
+
+        function renderCoursewareList(groups) {
+            const listEl = document.getElementById('coursewareList');
+            listEl.innerHTML = '';
+            if (groups.length === 0) {
+                listEl.innerHTML = '<div style="font-size:12px; color:#94a3b8; text-align:center;">暂无教案标绘</div>';
+                return;
+            }
+            groups.forEach(group => {
+                const groupDiv = document.createElement('div');
+                groupDiv.style.marginBottom = '10px';
+                groupDiv.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; background:var(--secondary-bg); padding:5px 10px; border-radius:4px; border: 1px solid var(--glass-border);">
+                        <span style="font-size:12px; font-weight:bold; color:var(--highlight-text)">📦 ${group.name}</span>
+                        <div style="display:flex; gap:5px;">
+                            <button class="load-btn" style="background:var(--highlight-text); padding:2px 6px; font-size:10px;" onclick="loadGroupToMap('${group.name}')">加载</button>
+                            <button class="load-btn" style="background:#e67e22; padding:2px 6px; font-size:10px;" onclick="unloadGroupFromMap('${group.name}')">卸下</button>
+                            <button class="load-btn" style="background:#f43f5e; padding:2px 6px; font-size:10px;" onclick="removeGroup('${group.name}')">删除</button>
+                        </div>
+                    </div>
+                `;
+                
+                group.drawings.forEach(d => {
+                    const div = document.createElement('div');
+                    div.className = 'asset-item';
+                    div.style.marginLeft = '10px';
+                    div.style.marginTop = '4px';
+                    div.innerHTML = `
+                        <div class="asset-info">
+                            <div style="font-weight:bold">${d.name}</div>
+                        </div>
+                        <button class="load-btn" style="background:#f43f5e; width:40px;" onclick="removeDrawing('${group.name}', '${d.name}')">删除</button>
+                    `;
+                    groupDiv.appendChild(div);
+                });
+                listEl.appendChild(groupDiv);
+            });
+        }
+
+        async function unloadGroupFromMap(groupName) {
+            if (!viewer) return;
+            await PipelineManager.acquireLock();
+            try {
+                log(`正在从地图上卸下组 [${groupName}]...`, 'info');
+                await PipelineManager.courseware.clear(groupName);
+                await syncActiveGroupsToBackend();
+                log(`组 [${groupName}] 已从地图上卸下`, 'success');
+            } finally {
+                PipelineManager.releaseLock();
+            }
+        }
+
+        async function removeGroup(groupName) {
+            if (!confirm(`确定要删除整个组 "${groupName}" 吗？`)) return;
+            await callPlugin({ command: 'RemoveDrawings', groupName: groupName, level: 'group' });
+            await syncCoursewareList();
+            // 立即同步清理地图 UI
+            await loadGroupToMap(groupName);
+        }
+
+        async function removeDrawing(groupName, name) {
+            if (!confirm(`确定要从组 "${groupName}" 中删除标绘 "${name}" 吗？`)) return;
+            await callPlugin({ command: 'RemoveDrawings', groupName: groupName, names: name, level: 'point' });
+            await syncCoursewareList();
+            // 立即同步刷新地图 UI
+            if (PipelineManager.courseware.activeDataSources.has(groupName)) {
+                await loadGroupToMap(groupName);
+            }
+        }
+
+        let cachedGroups = [];
+        function updateLinkSelectors(groups) {
+            cachedGroups = groups;
+            const groupSel = document.getElementById('linkGroup');
+            const options = groups.map(g => `<option value="${g.name}">${g.name}</option>`).join('');
+            groupSel.innerHTML = '<option value="">选择组...</option>' + options;
+            
+            // 清空点选择器
+            document.getElementById('linkStart').innerHTML = '<option value="">起点...</option>';
+            document.getElementById('linkEnd').innerHTML = '<option value="">终点...</option>';
+        }
+
+        function updateLinkSelectorsByGroup() {
+            const groupName = document.getElementById('linkGroup').value;
+            const startSel = document.getElementById('linkStart');
+            const endSel = document.getElementById('linkEnd');
+            
+            const group = cachedGroups.find(g => g.name === groupName);
+            if (group) {
+                const options = group.drawings.map(d => `<option value="${d.name}">${d.name}</option>`).join('');
+                startSel.innerHTML = '<option value="">起点...</option>' + options;
+                endSel.innerHTML = '<option value="">终点...</option>' + options;
+            } else {
+                startSel.innerHTML = '<option value="">起点...</option>';
+                endSel.innerHTML = '<option value="">终点...</option>';
+            }
+        }
+
+        function setupEntityClick() {
+            if (!viewer || !viewer.screenSpaceEventHandler) {
+                // 如果没有 handler，创建一个
+                if (viewer && !viewer._clickHandlersSet) {
+                    const handler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+                    handler.setInputAction((click) => {
+                        const pickedObject = viewer.scene.pick(click.position);
+                        if (Cesium.defined(pickedObject) && pickedObject.id) {
+                            const entity = pickedObject.id;
+                            if (entity.label && entity.description) {
+                                const currentText = String(entity.label.text.getValue());
+                                const description = String(entity.description.getValue() || "");
+                                // 优先使用备份的原始名称，其次使用实体名称
+                                const originalName = String(entity._originalName || entity.name || "");
+
+                                if (currentText === originalName && description) {
+                                    // 展开：显示 名称 + 描述
+                                    entity.label.text = `${originalName}\n(${description})`;
+                                    log(`展开标绘详情: ${originalName}`, 'info');
+                                } else {
+                                    // 收起：只显示名称
+                                    entity.label.text = originalName;
+                                    log(`收起标绘详情: ${originalName}`, 'info');
+                                }
+                            }
+                        }
+                    }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+
+                    // 添加双击跳转功能：将视角挪到该点上方 500 米处
+                    handler.setInputAction((click) => {
+                        const pickedObject = viewer.scene.pick(click.position);
+                        if (Cesium.defined(pickedObject) && pickedObject.id) {
+                            const entity = pickedObject.id;
+                            const position = entity.position.getValue(Cesium.JulianDate.now());
+                            if (position) {
+                                const cartographic = Cesium.Cartographic.fromCartesian(position);
+                                const lon = Cesium.Math.toDegrees(cartographic.longitude);
+                                const lat = Cesium.Math.toDegrees(cartographic.latitude);
+                                
+                                log(`双击跳转至标绘点: ${entity._originalName || entity.name || '未知'}`, 'info');
+                                viewer.camera.flyTo({
+                                    destination: Cesium.Cartesian3.fromDegrees(lon, lat, 500),
+                                    duration: 2
+                                });
+                            }
+                        }
+                    }, Cesium.ScreenSpaceEventType.LEFT_DOUBLE_CLICK);
+
+                    viewer._clickHandlersSet = true;
+                }
+            }
+        }
+
+        function setupAltimeter() {
+            if (!viewer) return;
+
+            const indicator = document.getElementById('altimeter-indicator');
+            const valueEl = document.getElementById('altimeter-value');
+            
+            // 定义对数刻度范围 (从 100m 到 20000km，覆盖全球视角)
+            const minAlt = 100;
+            const maxAlt = 20000000;
+
+            const chnNumbers = ["一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
+            viewer.camera.changed.addEventListener(() => {
+                const height = viewer.camera.positionCartographic.height;
+                
+                // 计算指示器位置
+                const clampedHeight = Math.max(minAlt, Math.min(maxAlt, height));
+                const logMin = Math.log10(minAlt);
+                const logMax = Math.log10(maxAlt);
+                const logCurrent = Math.log10(clampedHeight);
+                
+                const percentage = (logMax - logCurrent) / (logMax - logMin) * 100;
+                const topPos = Math.max(5, Math.min(95, percentage));
+                indicator.style.top = topPos + '%';
+
+                // 计算当前处于“第几重天” (将高度范围 9 等分)
+                // 0-11.1% 为九重天, ..., 88.8-100% 为一重天
+                let level = Math.floor((100 - percentage) / (100 / 9)) + 1;
+                level = Math.max(1, Math.min(9, level));
+                const levelName = chnNumbers[level - 1] + "重天";
+
+                // 更新数值显示
+                let displayHeight = "";
+                if (height > 1000) {
+                    displayHeight = (height / 1000).toFixed(2) + ' km';
+                } else {
+                    displayHeight = Math.round(height) + ' m';
+                }
+                valueEl.innerText = `${levelName} (${displayHeight})`;
+            });
+        }
+
+        function toggleDeduction() {
+            if (!viewer) return;
+            const isEnabled = !viewer.shadows;
+            viewer.shadows = isEnabled;
+            viewer.terrainShadows = isEnabled ? Cesium.ShadowMode.ENABLED : Cesium.ShadowMode.DISABLED;
+            viewer.scene.globe.enableLighting = isEnabled;
+            
+            // 开启烛阴时，通常需要开启 HDR 以获得更好的光影效果
+            viewer.scene.highDynamicRange = isEnabled;
+            
+            log(`烛阴模式 (光照与阴影): ${isEnabled ? '已开启' : '已关闭'}`, isEnabled ? 'success' : 'info');
+        }
+
+        // 核心修复：处理 InfoBox (iframe) 内部的样式和点击事件
+        function setupInfoBoxCustomization() {
+            if (!viewer || !viewer.infoBox) return;
+
+            const infoBox = viewer.infoBox;
+            
+            // 监听选中实体变化，当 InfoBox 显示时注入
+            viewer.selectedEntityChanged.addEventListener((entity) => {
+                if (!entity) return;
+
+                // 等待 iframe 加载完成
+                const checkIframe = setInterval(() => {
+                    const iframe = infoBox.container.querySelector('iframe.cesium-infoBox-iframe');
+                    if (iframe && iframe.contentDocument && iframe.contentDocument.body) {
+                        clearInterval(checkIframe);
+                        customizeInfoBoxIframe(iframe);
+                    }
+                }, 100);
+                
+                // 5秒后停止检查，防止死循环
+                setTimeout(() => clearInterval(checkIframe), 5000);
+            });
+        }
+
+        function customizeInfoBoxIframe(iframe) {
+            const doc = iframe.contentDocument;
+            
+            // 1. 注入 CSS 修复关闭按钮位置和美化按钮
+            if (!doc.getElementById('custom-infobox-style')) {
+                const style = doc.createElement('style');
+                style.id = 'custom-infobox-style';
+                style.textContent = `
+                    /* 彻底修复关闭按钮位置：强制靠右并美化 */
+                    .cesium-infoBox-close {
+                        position: absolute !important;
+                        right: 10px !important;
+                        left: unset !important;
+                        top: 10px !important;
+                        width: 24px !important;
+                        height: 24px !important;
+                        transform: none !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        background: rgba(255, 255, 255, 0.1) !important;
+                        border: none !important;
+                        border-radius: 50% !important;
+                        color: #fff !important;
+                        font-size: 18px !important;
+                        line-height: 24px !important;
+                        cursor: pointer !important;
+                        transition: background 0.2s !important;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.2) !important;
+                        text-decoration: none !important;
+                    }
+                    .cesium-infoBox-close:hover {
+                        background: rgba(231, 76, 60, 0.8) !important;
+                    }
+                    /* 修复模糊问题：确保容器不使用导致模糊的滤镜 */
+                    .cesium-infoBox {
+                        backdrop-filter: blur(10px) !important;
+                        -webkit-backdrop-filter: blur(10px) !important;
+                        background: rgba(26, 28, 35, 0.85) !important;
+                        border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                        border-radius: 12px !important;
+                        box-shadow: 0 8px 32px rgba(0,0,0,0.4) !important;
+                    }
+                    /* 内部样式保持精简 */
+                    /* 编辑按钮美化 - 简约风格 */
+                    .edit-btn {
+                        background: #3498db;
+                        color: white;
+                        border: none;
+                        padding: 4px 10px;
+                        border-radius: 3px;
+                        cursor: pointer;
+                        font-size: 11px;
+                        font-weight: 500;
+                        font-family: inherit;
+                        transition: all 0.2s;
+                        opacity: 0.9;
+                    }
+                    .edit-btn:hover {
+                        background: #2980b9;
+                        opacity: 1;
+                        transform: translateY(-1px);
+                    }
+                `;
+                doc.head.appendChild(style);
+            }
+
+            // 2. 修复点击事件：由于 iframe 隔离，使用事件代理并确保指向父窗口函数
+            if (!doc.body._clickListenerSet) {
+                doc.body.addEventListener('click', function(e) {
+                    const target = e.target.closest('.edit-btn');
+                    if (target) {
+                        const group = target.getAttribute('data-group');
+                        const name = target.getAttribute('data-name');
+                        if (group && name) {
+                            // 优先调用父窗口（主页面）的编辑函数，确保在 iframe 环境下也能正确触发
+                            const editFn = (typeof window.editDrawingLabel === 'function') ? window.editDrawingLabel :
+                                         (parent && typeof parent.editDrawingLabel === 'function') ? parent.editDrawingLabel : null;
+                            
+                            if (editFn) {
+                                editFn(group, name);
+                            } else {
+                                console.error('[Qianlimu] editDrawingLabel function not found in any scope');
+                            }
+                        }
+                    }
+                });
+                doc.body._clickListenerSet = true;
+            }
+        }
+
+        // 编辑标签功能
+        let currentEditingInfo = null;
+
+        window.editDrawingLabel = async function(groupName, name) {
+            console.log(`[Qianlimu] 准备编辑标签: 组=${groupName}, 名称=${name}`);
+            const result = await callPlugin({ command: 'LoadCourseware' });
+            if (!result || !result.groups) return;
+
+            const group = result.groups.find(g => g.name === groupName);
+            const drawing = group.drawings.find(d => d.name === name);
+            if (!drawing) return;
+
+            currentEditingInfo = { groupName, name, drawing };
+            
+            // 打开自定义弹窗
+            const overlay = document.getElementById('editModalOverlay');
+            const textarea = document.getElementById('modalTextarea');
+            const title = document.getElementById('modalTitle');
+            
+            title.innerText = `编辑标绘: ${name}`;
+            textarea.value = drawing.label || "";
+            overlay.style.display = 'flex';
+            textarea.focus();
+
+            // 绑定保存按钮事件
+            document.getElementById('modalSaveBtn').onclick = async () => {
+                const newLabel = textarea.value;
+                await performSaveLabel(newLabel);
+                closeEditModal();
+            };
+        };
+
+        function closeEditModal() {
+            document.getElementById('editModalOverlay').style.display = 'none';
+            currentEditingInfo = null;
+        }
+
+        async function performSaveLabel(newLabel) {
+            if (!currentEditingInfo) return;
+            const { groupName, name, drawing } = currentEditingInfo;
+
+            const payload = {
+                command: 'AddDrawing',
+                groupName: groupName,
+                name: drawing.name,
+                label: newLabel,
+                largeRegion: drawing.region.large,
+                smallRegion: drawing.region.small,
+                longitude: drawing.position.longitude,
+                latitude: drawing.position.latitude,
+                associations: drawing.associations || [],
+                color: drawing.style ? drawing.style.color : 'red',
+                size: drawing.style ? (drawing.style.pointSize || drawing.style.size) : 10
+            };
+
+            await callPlugin(payload);
+            await syncCoursewareList();
+            // 刷新地图显示
+            await loadGroupToMap(groupName);
+            
+            // 重新选中该实体以更新弹窗内容
+            if (viewer.selectedEntity && viewer.selectedEntity.id === `${groupName}_${name}`) {
+                const entity = viewer.selectedEntity;
+                viewer.selectedEntity = undefined;
+                setTimeout(() => {
+                    viewer.selectedEntity = entity;
+                }, 100);
+            }
+        }
+
+        // --- AI 指令执行引擎 ---
+        function startCommandPolling() {
+            // 使用递归 setTimeout 代替 setInterval，确保上一次请求完成后再发起下一次，
+            // 避免在网络拥塞或处理缓慢时堆积请求。
+            async function poll() {
+                try {
+                    const response = await fetch('/qianlimu/api/commands');
+                    const commands = await response.json();
+                    if (Array.isArray(commands) && commands.length > 0) {
+                        // 过滤掉重复的指令 ID，防止在极端情况下处理重复指令
+                        const uniqueCommands = [];
+                        const seenIds = new Set();
+                        for (const cmd of commands) {
+                            if (cmd.id && !seenIds.has(cmd.id)) {
+                                seenIds.add(cmd.id);
+                                uniqueCommands.push(cmd);
+                            }
+                        }
+
+                        for (const cmd of uniqueCommands) {
+                            // 使用 await 顺序执行指令，防止多个加载指令并发导致 PipelineManager 锁竞争
+                            await executeAICommand(cmd);
+                        }
+                    }
+                } catch (e) {
+                    console.error('[Qianlimu] Polling error:', e);
+                } finally {
+                    setTimeout(poll, 1000);
+                }
+            }
+            poll();
+        }
+
+        async function executeAICommand(cmd) {
+            log(`收到 AI 指令: ${cmd.type}`, 'cmd');
+            
+            if (cmd.type === 'camera.flyTo') {
+                let dest = cmd.destination;
+                
+                // 如果没有经纬度但有地名，利用 Cesium Geocoder 解析
+                if (!dest && cmd.locationName) {
+                    log(`正在解析地名并飞行: ${cmd.locationName}`, 'info');
+                    const geocoder = viewer.geocoder.viewModel;
+                    
+                    // 劫持 Geocoder 的飞行行为，确保使用指定的高度和时长
+                    const originalFlyTo = viewer.camera.flyTo;
+                    viewer.camera.flyTo = (options) => {
+                        // 恢复原始函数
+                        viewer.camera.flyTo = originalFlyTo;
+                        
+                        // 提取 Geocoder 解析出的经纬度
+                        const cartographic = Cesium.Cartographic.fromCartesian(options.destination);
+                        const lon = Cesium.Math.toDegrees(cartographic.longitude);
+                        const lat = Cesium.Math.toDegrees(cartographic.latitude);
+                        
+                        // 使用指令要求的高度和时长重新发起飞行
+                        return originalFlyTo.call(viewer.camera, {
+                            destination: Cesium.Cartesian3.fromDegrees(lon, lat, cmd.height || 500),
+                            duration: cmd.duration || 0.8,
+                            maximumHeight: Math.max(cmd.height || 500, 2000) // 限制最高飞行高度，防止飞到外太空
+                        });
+                    };
+
+                    geocoder.searchText = cmd.locationName;
+                    geocoder.search();
+                    
+                    // 等待解析完成 (简单轮询 viewModel 状态)
+                    await new Promise((resolve) => {
+                        const check = setInterval(() => {
+                            if (!geocoder.isSearchInProgress) {
+                                clearInterval(check);
+                                resolve();
+                            }
+                        }, 200);
+                    });
+                } else if (dest) {
+                    viewer.camera.flyTo({
+                        destination: Cesium.Cartesian3.fromDegrees(dest.longitude, dest.latitude, dest.height || 500),
+                        duration: cmd.duration || 0.8,
+                        maximumHeight: Math.max(dest.height || 500, 2000) // 限制最高飞行高度
+                    });
+                }
+
+                // 处理截图逻辑
+                if (cmd.screenshot) {
+                    // 1. 确保飞行彻底开始
+                    // 如果是 Geocoder 触发的，或者 flyTo 刚调用，camera.isTransforming 可能还没来得及变 true
+                    await new Promise(resolve => setTimeout(resolve, 300));
+
+                    // 2. 强力等待飞行彻底结束
+                    // 只要相机还在变换，或者场景还在处理相机工作，就持续等待
+                    while (viewer.camera.isTransforming || viewer.scene.camera.working) {
+                        log('正在飞行中...', 'info');
+                        await new Promise(resolve => {
+                            const removeListener = viewer.camera.moveEnd.addEventListener(() => {
+                                removeListener();
+                                resolve();
+                            });
+                            // 安全超时：如果 moveEnd 没触发但状态变了，也继续
+                            setTimeout(resolve, 500);
+                        });
+                    }
+                    
+                    // 飞行结束后的二次确认缓冲，确保相机完全静止
+                    await new Promise(resolve => setTimeout(resolve, 200));
+
+                    log('飞行已到达目的地，进入急速渲染模式 (Turbo Mode)...', 'success');
+                    
+                    // 备份原始渲染设置
+                    const originalSSE = viewer.scene.globe.maximumScreenSpaceError;
+                    const originalRequests = Cesium.RequestScheduler.maximumRequestsPerServer;
+                    const originalThreshold = viewer.scene.globe.loadingQueueThreshold;
+                    
+                    // 开启急速渲染：降低误差容忍度，提高并发，优先加载
+                    viewer.scene.globe.maximumScreenSpaceError = 1.0; // 强制最高精度
+                    Cesium.RequestScheduler.maximumRequestsPerServer = 32; // 翻倍并发请求
+                    viewer.scene.globe.loadingQueueThreshold = 0; // 立即处理所有请求
+                    
+                    // 如果当前有 3D 模型，也同步提升其精度
+                    let originalTilesetSSE = null;
+                    if (PipelineManager.models.current) {
+                        originalTilesetSSE = PipelineManager.models.current.maximumScreenSpaceError;
+                        PipelineManager.models.current.maximumScreenSpaceError = 4.0; // 提升 3D Tiles 精度
+                    }
+
+                    log('正在等待地图渲染清晰...', 'info');
+                    // 核心修复：等待 tilesLoaded 为 true，并增加等待时间
+                    await new Promise(resolve => {
+                        const startTime = Date.now();
+                        const checkTiles = setInterval(() => {
+                            // 检查瓦片是否全部加载完成
+                            const isLoaded = viewer.scene.globe.tilesLoaded;
+                            
+                            // 如果加载完成，或者等待超过 7 秒（放宽等待时间，因为后端超时已调至 10s），则执行截图
+                            if (isLoaded || (Date.now() - startTime > 7000)) {
+                                if (isLoaded) {
+                                    log('地图渲染已清晰', 'success');
+                                } else {
+                                    log('渲染等待超时，强制截图', 'info');
+                                }
+                                clearInterval(checkTiles);
+                                // 渲染完成后立即执行，不再额外耽搁
+                                resolve();
+                            }
+                        }, 100);
+                    });
+
+                    log('正在生成截图...', 'info');
+                    const canvas = viewer.scene.canvas;
+                    const base64 = canvas.toDataURL('image/jpeg', 0.8);
+                    
+                    // 优化：直接通过 IPC 保存文件，彻底移除网络传输中的 Base64 字符串
+                    if (window.electronAPI && window.electronAPI.saveQianlimuScreenshot) {
+                        try {
+                            const saveResult = await window.electronAPI.saveQianlimuScreenshot(cmd.id, base64);
+                            if (saveResult && saveResult.success) {
+                                log('截图已本地保存', 'success');
+                                
+                                // 仅回传路径，不再发送 base64
+                                await fetch('/qianlimu/api/commands/result', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        commandId: cmd.id,
+                                        screenshotPath: saveResult.path
+                                    })
+                                });
+                                log('截图路径已回传', 'success');
+                                
+                                // 恢复原始渲染设置
+                                viewer.scene.globe.maximumScreenSpaceError = originalSSE;
+                                Cesium.RequestScheduler.maximumRequestsPerServer = originalRequests;
+                                viewer.scene.globe.loadingQueueThreshold = originalThreshold;
+                                if (originalTilesetSSE !== null && PipelineManager.models.current) {
+                                    PipelineManager.models.current.maximumScreenSpaceError = originalTilesetSSE;
+                                }
+                                log('已恢复常规渲染模式', 'info');
+                                return;
+                            }
+                        } catch (e) {
+                            console.error('IPC save screenshot failed:', e);
+                        }
+                    }
+
+                    // 降级处理：如果 IPC 不可用，则报错（因为用户明确要求不再通过服务器请求字符串）
+                    log('本地保存失败，无法完成截图回传', 'error');
+                    
+                    // 恢复原始渲染设置
+                    viewer.scene.globe.maximumScreenSpaceError = originalSSE;
+                    Cesium.RequestScheduler.maximumRequestsPerServer = originalRequests;
+                    viewer.scene.globe.loadingQueueThreshold = originalThreshold;
+                    if (originalTilesetSSE !== null && PipelineManager.models.current) {
+                        PipelineManager.models.current.maximumScreenSpaceError = originalTilesetSSE;
+                    }
+                    log('已恢复常规渲染模式', 'info');
+                }
+            } else if (cmd.type === 'data.loadCZML') {
+                // 处理 AI 添加点后的自动加载指令
+                log(`执行自动加载指令，组: ${cmd.groupName || '未知'}`, 'info');
+                if (cmd.groupName) {
+                    // 如果有组名，调用现有的 loadGroupToMap 逻辑
+                    await loadGroupToMap(cmd.groupName);
+                } else if (cmd.czml) {
+                    // 如果没有组名但有 CZML，直接加载
+                    await PipelineManager.acquireLock();
+                    try {
+                        const dataSource = await Cesium.CzmlDataSource.load(cmd.czml);
+                        postProcessEntities(dataSource);
+                        await viewer.dataSources.add(dataSource);
+                        log('CZML 数据已直接加载', 'success');
+                    } catch (e) {
+                        log('直接加载 CZML 失败: ' + e.message, 'error');
+                    } finally {
+                        PipelineManager.releaseLock();
+                    }
+                }
+            }
+        }
+
+        /**
+         * 统一处理实体：注入旋转特效、备份原始名称等
+         */
+        function postProcessEntities(dataSource) {
+            dataSource.entities.values.forEach(entity => {
+                // 1. 备份原始名称用于展开/收起详情
+                if (entity.label) {
+                    const val = entity.label.text.getValue();
+                    entity._originalName = typeof val === 'string' ? val : entity.name;
+                }
+
+                // 2. 为棋子添加旋转特效
+                if (entity.billboard) {
+                    let rotation = Math.random() * Math.PI * 2; // 随机初始角度
+                    const rotationSpeed = 0.015; // 旋转速度
+                    entity.billboard.rotation = new Cesium.CallbackProperty(() => {
+                        rotation += rotationSpeed;
+                        return rotation;
+                    }, false);
+                }
+            });
+        }
+    </script>
+</body>
+</html>

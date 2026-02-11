@@ -1,0 +1,26 @@
+{
+  "manifestVersion": "1.0.0",
+  "name": "QianlimuState",
+  "version": "1.0.0",
+  "displayName": "千里目状态上报器",
+  "description": "专门负责监控地理教学系统的状态并更新 AI 占位符。",
+  "author": "vcp agent",
+  "pluginType": "static",
+  "entryPoint": {
+    "type": "nodejs",
+    "command": "node state-reporter.js"
+  },
+  "refreshIntervalCron": "0 */30 * * * *",
+  "watchFiles": [
+    "../qianlimu/ui-state.json",
+    "../qianlimu/courseware.json"
+  ],
+  "capabilities": {
+    "systemPromptPlaceholders": [
+      {
+        "placeholder": "{{VCPQianlimuState}}",
+        "description": "千里目地理教学系统的实时状态，包括运行状态、所有分组、已加载分组的详细点位信息等。"
+      }
+    ]
+  }
+}
